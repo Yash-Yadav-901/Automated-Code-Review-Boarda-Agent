@@ -10,27 +10,21 @@ from semantic_kernel.contents import ChatHistory
 class FixSuggestionAgent:
     """
     Agent 6: Fix-Suggestion Agent (Group-of-3 Add-on / Separate Module)
-    Role: Inspects the consolidated review, identifies the single highest-severity
-    defect, and synthesizes a concrete, ready-to-apply patch (unified diff) to resolve it.
-    Calls 2 real Python tools:
-      1. extract_code_context
-      2. generate_unified_patch
+    Identifies the single highest-severity defect and synthesizes a concrete,
+    ready-to-apply patch (unified diff) to resolve it.
     """
     def __init__(self, agent_name: str = "FixSuggestionAgent"):
         self.name = agent_name
         self.kernel, self.settings = create_sk_kernel(service_id=f"{self.name}_service")
 
     async def run(self, state: ChangeState) -> ChangeState:
-        # Check if there are priority findings
         if not state.priority_findings:
             state.log_event(self.name, "skipped", {"reason": "No findings to generate fixes for."})
             return state
 
-        # Single highest-severity finding is the first item in priority_findings
         top_finding: Finding = state.priority_findings[0]
         state.patch_target_finding_id = top_finding.id
 
-        # Find the touched file corresponding to this finding
         matched_file = None
         for f in state.files:
             if f.path == top_finding.file_path or top_finding.file_path.endswith(f.path):
@@ -41,7 +35,6 @@ class FixSuggestionAgent:
         if not original_code:
             original_code = state.raw_diff
 
-        # Tool Call 1: Extract code context around the target line
         context = extract_code_context(
             file_content=original_code,
             target_line=top_finding.line_number,
@@ -54,7 +47,6 @@ class FixSuggestionAgent:
             data={"tool": "extract_code_context", "target_line": top_finding.line_number}
         )
 
-        # Grounded LLM reasoning to synthesize the repaired code replacement
         prompt = (
             f"You are the Fix-Suggestion Agent on an Automated Code Review Board.\n"
             f"A high-priority issue was flagged in '{top_finding.file_path}':\n"
@@ -75,10 +67,8 @@ class FixSuggestionAgent:
             history.add_user_message(prompt)
             response = await chat_service.get_chat_message_content(history, self.settings)
             raw_text = str(response.content).strip()
-            # Strip markdown code fences if LLM wrapped them
             if "```" in raw_text:
                 parts = raw_text.split("```")
-                # parts[1] typically holds the language + code
                 code_part = parts[1]
                 if code_part.startswith("python"):
                     code_part = code_part[6:]
@@ -89,7 +79,6 @@ class FixSuggestionAgent:
             replacement_code = f"# Fallback auto-fix: Replace with secure implementation\n# {top_finding.suggestion}"
             state.warnings.append(f"FixSuggestionAgent LLM fallback: {str(e)}")
 
-        # Tool Call 2: Generate unified git diff patch
         target_path = top_finding.file_path if top_finding.file_path != "diff_stream" else "src/module.py"
         patch = generate_unified_patch(
             file_path=target_path,

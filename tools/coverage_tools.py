@@ -8,7 +8,6 @@ def detect_test_file_presence(
     all_diff_files: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Real Tool 1 (Test-Coverage Agent):
     Evaluates whether business logic modifications have corresponding test modifications.
     Pairs implementation files with their anticipated test files (e.g. `service.py` -> `test_service.py`).
     """
@@ -23,7 +22,6 @@ def detect_test_file_presence(
 
     for c_file in code_files:
         base_name = c_file.split("/")[-1].replace(".py", "")
-        # Look for matching test
         matched_test = None
         for t_file in test_files:
             if base_name in t_file:
@@ -51,14 +49,12 @@ def evaluate_test_adequacy(
     test_snippets: Dict[str, str]
 ) -> List[Dict[str, Any]]:
     """
-    Real Tool 2 (Test-Coverage Agent):
     Cross-references newly defined functions in implementation files with assertions
     and test call patterns in test files. Flags functions that have 0 corresponding assertions.
     """
     findings: List[Dict[str, Any]] = []
 
-    # Extract all function names defined in production files
-    functions_to_test: List[tuple[str, str, int]] = []  # (file, func_name, line)
+    functions_to_test: List[tuple[str, str, int]] = []
     for f_path, code in code_snippets.items():
         if _is_test(f_path) or not f_path.endswith(".py"):
             continue
@@ -71,7 +67,6 @@ def evaluate_test_adequacy(
         except SyntaxError:
             pass
 
-    # Inspect test files for assertions and test coverage
     combined_test_code = "\n".join(test_snippets.values())
     has_asserts = "assert" in combined_test_code
 

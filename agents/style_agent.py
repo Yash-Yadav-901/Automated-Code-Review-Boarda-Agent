@@ -10,18 +10,14 @@ from semantic_kernel.contents import ChatHistory
 class StyleAgent:
     """
     Agent 2: Style Agent (Separate Module)
-    Role: Reviews code additions for PEP 8 styling conventions, missing documentation,
+    Reviews code additions for PEP 8 styling conventions, missing documentation,
     naming violations, and cyclomatic complexity limits.
-    Calls 2 real Python tools:
-      1. check_pep8_and_docstrings
-      2. calculate_cyclomatic_complexity
     """
     def __init__(self, agent_name: str = "StyleAgent"):
         self.name = agent_name
         self.kernel, self.settings = create_sk_kernel(service_id=f"{self.name}_service")
 
     async def run(self, state: ChangeState) -> ChangeState:
-        # Prepare code dictionary for analysis
         code_snippets: Dict[str, str] = {
             f.path: f.added_code
             for f in state.files
@@ -32,7 +28,6 @@ class StyleAgent:
             state.log_event(self.name, "skipped", {"reason": "No Python additions to check"})
             return state
 
-        # Tool Call 1: Check PEP 8, docstrings, and naming standards
         pep8_issues = check_pep8_and_docstrings(code_snippets)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -41,7 +36,6 @@ class StyleAgent:
             data={"tool": "check_pep8_and_docstrings", "findings_found": len(pep8_issues)}
         )
 
-        # Tool Call 2: Compute Cyclomatic Complexity
         complexity_issues = calculate_cyclomatic_complexity(code_snippets, threshold=8)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -50,7 +44,6 @@ class StyleAgent:
             data={"tool": "calculate_cyclomatic_complexity", "findings_found": len(complexity_issues)}
         )
 
-        # Merge tool findings into shared state
         for item in pep8_issues + complexity_issues:
             severity_enum = Severity(item["severity"])
             state.add_finding(
@@ -67,7 +60,6 @@ class StyleAgent:
                 )
             )
 
-        # Semantic Kernel LLM reasoning for high-level readability synthesis
         if pep8_issues or complexity_issues:
             issue_summary = "\n".join([f"- {i['rule_id']}: {i['description']}" for i in (pep8_issues + complexity_issues)[:5]])
             prompt = (

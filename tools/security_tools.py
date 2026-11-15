@@ -13,9 +13,8 @@ SECRET_PATTERNS = [
 
 def scan_secrets_and_credentials(diff_text: str) -> List[Dict[str, Any]]:
     """
-    Real Tool 1 (Security Agent):
-    Scans additions and diff context for committed credentials, AWS secret keys,
-    API keys, authorization tokens, and private keys using regular expression patterns.
+    Scans additions and diff context for committed credentials, AWS keys,
+    API tokens, and private keys using regular expression patterns.
     """
     findings: List[Dict[str, Any]] = []
     lines = diff_text.splitlines()
@@ -38,12 +37,8 @@ def scan_secrets_and_credentials(diff_text: str) -> List[Dict[str, Any]]:
 
 def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, Any]]:
     """
-    Real Tool 2 (Security Agent):
-    Analyzes Python AST and patterns for dangerous security anti-patterns:
-    - SQL injection via raw string formatting (f-strings) or concatenation (+) in queries
-    - Unsafe evaluation via eval() or exec()
-    - Insecure subprocess execution with shell=True
-    - Insecure deserialization via pickle.loads()
+    Analyzes Python AST for security vulnerabilities:
+    SQL injection, dynamic eval/exec, insecure subprocess with shell=True, and pickle.loads.
     """
     findings: List[Dict[str, Any]] = []
 
@@ -56,18 +51,15 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
             tainted_sql_vars = set()
 
             for node in ast.walk(tree):
-                # Track variables assigned formatted SQL statements e.g. query = f"SELECT ... {var}"
                 if isinstance(node, ast.Assign):
                     is_sql_formatted = False
                     if isinstance(node.value, ast.JoinedStr):
-                        # Inspect string parts for SQL keywords
                         for part in node.value.values:
                             if isinstance(part, ast.Constant) and isinstance(part.value, str):
                                 if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b", part.value, re.IGNORECASE):
                                     is_sql_formatted = True
                                     break
                     elif isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Add):
-                        # Concat string with SQL keyword
                         for sub in (node.value.left, node.value.right):
                             if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
                                 if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b", sub.value, re.IGNORECASE):
@@ -88,7 +80,6 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                             "suggestion": "Use parameterized queries with placeholder substitution (e.g., 'WHERE id = ?', (user_id,)).",
                         })
 
-                # Detect dangerous function calls
                 if isinstance(node, ast.Call):
                     func_name = ""
                     if isinstance(node.func, ast.Name):
@@ -96,7 +87,6 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                     elif isinstance(node.func, ast.Attribute):
                         func_name = node.func.attr
 
-                    # 1. eval() or exec()
                     if func_name in ("eval", "exec"):
                         findings.append({
                             "file_path": file_path,
@@ -108,7 +98,6 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                             "suggestion": "Replace dynamic code execution with structured parsing or safe data dispatch.",
                         })
 
-                    # 2. Insecure subprocess shell=True
                     if func_name in ("system", "popen", "run", "Popen"):
                         for kw in node.keywords:
                             if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
@@ -122,7 +111,6 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                                     "suggestion": "Set shell=False and pass arguments as an explicit list.",
                                 })
 
-                    # 3. Insecure deserialization (pickle.loads)
                     if func_name in ("loads", "load"):
                         if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
                             if node.func.value.id == "pickle":
@@ -136,7 +124,6 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                                     "suggestion": "Use safe serialization formats like JSON, Protocol Buffers, or msgpack.",
                                 })
 
-                    # 4. Direct execute calls with tainted SQL variables or f-strings
                     if func_name in ("execute", "executemany", "raw"):
                         if node.args:
                             first_arg = node.args[0]
@@ -158,7 +145,7 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                                 })
 
         except SyntaxError:
-            # Fallback regex scanning if AST fails
+            # Fallback regex scanning when AST parsing fails
             lines = code.splitlines()
             for idx, line in enumerate(lines, start=1):
                 if re.search(r"\bexecute\s*\(\s*f['\"].*SELECT|INSERT|UPDATE|DELETE", line, re.IGNORECASE):

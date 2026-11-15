@@ -5,11 +5,8 @@ from typing import Any, Dict, List
 
 def check_pep8_and_docstrings(code_snippets: Dict[str, str]) -> List[Dict[str, Any]]:
     """
-    Real Tool 1 (Style Agent):
-    Audits Python code snippets for PEP 8 styling conventions, missing docstrings
-    on functions and classes, naming standard compliance (snake_case vs CamelCase),
-    and line length limits (> 100 characters).
-    Includes honest failure recovery when parsing malformed syntax.
+    Audits Python code snippets for PEP 8 styling conventions, missing docstrings,
+    naming standards, line length limits, and handles AST syntax parsing errors gracefully.
     """
     findings: List[Dict[str, Any]] = []
 
@@ -17,7 +14,6 @@ def check_pep8_and_docstrings(code_snippets: Dict[str, str]) -> List[Dict[str, A
         if not file_path.endswith(".py") or not code.strip():
             continue
 
-        # Line-by-line checks (formatting, line length)
         lines = code.splitlines()
         for idx, line in enumerate(lines, start=1):
             if len(line) > 100:
@@ -41,12 +37,10 @@ def check_pep8_and_docstrings(code_snippets: Dict[str, str]) -> List[Dict[str, A
                     "suggestion": "Remove unnecessary trailing spaces.",
                 })
 
-        # AST-level docstring and naming checks with honest failure recovery
         try:
             tree = ast.parse(code)
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    # Check docstrings
                     if not ast.get_docstring(node):
                         findings.append({
                             "file_path": file_path,
@@ -57,7 +51,6 @@ def check_pep8_and_docstrings(code_snippets: Dict[str, str]) -> List[Dict[str, A
                             "description": f"Function '{node.name}' is missing a docstring.",
                             "suggestion": "Add a clear docstring explaining arguments, return type, and purpose.",
                         })
-                    # Check naming (functions should be snake_case, not camelCase or PascalCase)
                     if not node.name.startswith("__") and re.search(r"[A-Z]", node.name):
                         findings.append({
                             "file_path": file_path,
@@ -82,7 +75,7 @@ def check_pep8_and_docstrings(code_snippets: Dict[str, str]) -> List[Dict[str, A
                         })
 
         except SyntaxError as e:
-            # Honest failure handled: malformed syntax or partial snippet
+            # Honest failure handled: catch malformed syntax and fall back gracefully
             findings.append({
                 "file_path": file_path,
                 "line_number": e.lineno,
@@ -98,9 +91,7 @@ def check_pep8_and_docstrings(code_snippets: Dict[str, str]) -> List[Dict[str, A
 
 def calculate_cyclomatic_complexity(code_snippets: Dict[str, str], threshold: int = 8) -> List[Dict[str, Any]]:
     """
-    Real Tool 2 (Style Agent):
-    Traverses AST to compute McCabe Cyclomatic Complexity per function
-    by counting decision points (if, for, while, and, or, except).
+    Computes McCabe Cyclomatic Complexity per function by counting decision points.
     Flags functions whose complexity exceeds the threshold.
     """
     findings: List[Dict[str, Any]] = []
@@ -113,7 +104,7 @@ def calculate_cyclomatic_complexity(code_snippets: Dict[str, str], threshold: in
             tree = ast.parse(code)
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    complexity = 1  # Base complexity
+                    complexity = 1
                     for subnode in ast.walk(node):
                         if isinstance(subnode, (ast.If, ast.While, ast.For, ast.AsyncFor, ast.ExceptHandler)):
                             complexity += 1
@@ -131,7 +122,6 @@ def calculate_cyclomatic_complexity(code_snippets: Dict[str, str], threshold: in
                             "suggestion": "Refactor deeply nested branching or loops into helper functions.",
                         })
         except SyntaxError:
-            # Handled in AST parse tool; skip duplicate error emission
             pass
 
     return findings

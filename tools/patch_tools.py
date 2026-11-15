@@ -8,7 +8,6 @@ def extract_code_context(
     window: int = 4
 ) -> Dict[str, Any]:
     """
-    Real Tool 1 (Fix-Suggestion Agent):
     Locates the target line within the file content and extracts surrounding
     context lines to facilitate accurate patch synthesis.
     """
@@ -42,14 +41,12 @@ def generate_unified_patch(
     replacement_code: str
 ) -> str:
     """
-    Real Tool 2 (Fix-Suggestion Agent):
     Constructs a syntactically valid unified diff patch that can be applied
-    directly via `git apply` or review platforms.
+    directly via `git apply`.
     """
     orig_lines = original_code.splitlines(keepends=True)
     repl_lines = replacement_code.splitlines(keepends=True)
 
-    # Ensure trailing newlines
     if orig_lines and not orig_lines[-1].endswith("\n"):
         orig_lines[-1] += "\n"
     if repl_lines and not repl_lines[-1].endswith("\n"):

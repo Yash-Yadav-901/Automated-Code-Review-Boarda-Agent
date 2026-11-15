@@ -49,5 +49,4 @@ class RunLogger:
         return entries
 
 
-# Default global logger instance
 audit_logger = RunLogger()

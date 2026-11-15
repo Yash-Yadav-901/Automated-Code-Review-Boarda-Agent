@@ -10,19 +10,14 @@ from semantic_kernel.contents import ChatHistory
 class SecurityAgent:
     """
     Agent 3: Security Agent (Separate Module)
-    Role: Inspects the submitted code change for security vulnerabilities,
-    such as hardcoded API keys, exposed credentials, SQL injection patterns,
-    eval/exec usage, and dangerous subprocess executions.
-    Calls 2 real Python tools:
-      1. scan_secrets_and_credentials
-      2. audit_code_vulnerabilities
+    Inspects code changes for hardcoded credentials, SQL injection,
+    eval/exec usage, and unsafe subprocess execution.
     """
     def __init__(self, agent_name: str = "SecurityAgent"):
         self.name = agent_name
         self.kernel, self.settings = create_sk_kernel(service_id=f"{self.name}_service")
 
     async def run(self, state: ChangeState) -> ChangeState:
-        # Tool Call 1: Secret and credential scanner across diff lines
         secret_findings = scan_secrets_and_credentials(state.raw_diff)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -31,14 +26,12 @@ class SecurityAgent:
             data={"tool": "scan_secrets_and_credentials", "secrets_detected": len(secret_findings)}
         )
 
-        # Prepare code snippets for AST vulnerability audit
         code_snippets: Dict[str, str] = {
             f.path: f.added_code
             for f in state.files
             if f.added_code.strip() and f.path.endswith(".py")
         }
 
-        # Tool Call 2: AST vulnerability audit (SQLi, eval, shell=True, pickle)
         vuln_findings = audit_code_vulnerabilities(code_snippets)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -49,9 +42,7 @@ class SecurityAgent:
 
         all_sec = secret_findings + vuln_findings
 
-        # Append structured findings to shared state
         for item in all_sec:
-            # Map diff_stream file to first touched file if available
             target_file = item["file_path"]
             if target_file == "diff_stream" and state.files:
                 target_file = state.files[0].path
@@ -71,7 +62,6 @@ class SecurityAgent:
                 )
             )
 
-        # Grounded LLM reasoning: If critical vulnerabilities were found, generate an impact brief
         if any(f.get("severity") == "CRITICAL" for f in all_sec):
             crit_summary = "\n".join([f"- {i['rule_id']}: {i['description']}" for i in all_sec if i.get("severity") == "CRITICAL"][:3])
             prompt = (

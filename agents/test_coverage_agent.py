@@ -10,11 +10,8 @@ from semantic_kernel.contents import ChatHistory
 class TestCoverageAgent:
     """
     Agent 4: Test-Coverage Agent (Separate Module)
-    Role: Verifies whether code changes are backed by corresponding unit tests,
+    Verifies whether code changes are backed by corresponding unit tests,
     ensures test coverage presence, and detects untested public function definitions.
-    Calls 2 real Python tools:
-      1. detect_test_file_presence
-      2. evaluate_test_adequacy
     """
     def __init__(self, agent_name: str = "TestCoverageAgent"):
         self.name = agent_name
@@ -28,7 +25,6 @@ class TestCoverageAgent:
             state.log_event(self.name, "skipped", {"reason": "No non-test Python files to verify coverage for."})
             return state
 
-        # Tool Call 1: Check presence of accompanying test files
         presence_res = detect_test_file_presence(
             modified_files=modified_code_files,
             all_diff_files=all_paths
@@ -40,7 +36,6 @@ class TestCoverageAgent:
             data={"tool": "detect_test_file_presence", "presence_score": presence_res.get("test_presence_score")}
         )
 
-        # Prepare code vs test snippets
         code_snippets: Dict[str, str] = {
             f.path: f.added_code
             for f in state.files
@@ -52,7 +47,6 @@ class TestCoverageAgent:
             if f.is_test_file and f.added_code.strip() and f.path.endswith(".py")
         }
 
-        # Tool Call 2: Evaluate test adequacy for newly added public functions
         adequacy_findings = evaluate_test_adequacy(code_snippets, test_snippets)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -61,7 +55,6 @@ class TestCoverageAgent:
             data={"tool": "evaluate_test_adequacy", "adequacy_gaps": len(adequacy_findings)}
         )
 
-        # If completely missing tests for code files, record a high-severity finding
         if presence_res.get("uncovered_files") and not presence_res.get("has_tests"):
             for unc_file in presence_res["uncovered_files"]:
                 state.add_finding(
@@ -78,7 +71,6 @@ class TestCoverageAgent:
                     )
                 )
 
-        # Append adequacy gaps
         for item in adequacy_findings:
             state.add_finding(
                 Finding(
@@ -94,7 +86,6 @@ class TestCoverageAgent:
                 )
             )
 
-        # Semantic Kernel LLM reasoning on coverage posture
         total_cov_issues = len(presence_res.get("uncovered_files", [])) + len(adequacy_findings)
         if total_cov_issues > 0:
             prompt = (

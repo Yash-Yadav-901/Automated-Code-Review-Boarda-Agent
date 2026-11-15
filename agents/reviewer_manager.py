@@ -9,19 +9,14 @@ from semantic_kernel.contents import ChatHistory
 class ReviewerManagerAgent:
     """
     Agent 5: Reviewer Manager (Separate Module)
-    Role: Fans in findings from all parallel review specialists (Diff, Style, Security, Test-Coverage),
-    deduplicates redundant signals, sorts findings by strict severity priority order,
-    and issues the definitive merge verdict ('approve' or 'request-changes').
-    Calls 2 real Python tools:
-      1. deduplicate_and_rank_findings
-      2. compute_merge_verdict
+    Fans in findings from parallel review specialists, deduplicates redundant signals,
+    sorts findings by severity priority order, and issues the definitive merge verdict.
     """
     def __init__(self, agent_name: str = "ReviewerManager"):
         self.name = agent_name
         self.kernel, self.settings = create_sk_kernel(service_id=f"{self.name}_service")
 
     async def run(self, state: ChangeState) -> ChangeState:
-        # Convert findings to dicts for tool consumption
         raw_findings_dict: List[Dict[str, Any]] = [
             {
                 "id": f.id,
@@ -37,7 +32,6 @@ class ReviewerManagerAgent:
             for f in state.findings
         ]
 
-        # Tool Call 1: Deduplicate and rank findings by priority
         ranked_dicts = deduplicate_and_rank_findings(raw_findings_dict)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -46,19 +40,16 @@ class ReviewerManagerAgent:
             data={"tool": "deduplicate_and_rank_findings", "input_count": len(raw_findings_dict), "output_count": len(ranked_dicts)}
         )
 
-        # Count frequencies per severity level
         severity_counts: Dict[str, int] = {}
         for item in ranked_dicts:
             sev = item["severity"]
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
-        # Check if there is an explicit test coverage blocker
         has_cov_blocker = any(
             f["severity"] in ("CRITICAL", "HIGH") and "COV" in f.get("rule_id", "")
             for f in ranked_dicts
         )
 
-        # Tool Call 2: Compute merge verdict via policy gates
         verdict_res = compute_merge_verdict(
             severity_counts=severity_counts,
             has_test_coverage_blocker=has_cov_blocker
@@ -70,7 +61,6 @@ class ReviewerManagerAgent:
             data={"tool": "compute_merge_verdict", "verdict": verdict_res.get("verdict")}
         )
 
-        # Update ChangeState
         state.merge_verdict = verdict_res["verdict"]
         state.priority_findings = [
             Finding(
@@ -87,7 +77,6 @@ class ReviewerManagerAgent:
             for d in ranked_dicts
         ]
 
-        # Semantic Kernel LLM reasoning to draft the official review justification
         findings_breakdown = "\n".join([
             f"[{f.severity.value}] {f.rule_id} ({f.file_path}:{f.line_number or 'N/A'}) - {f.description}"
             for f in state.priority_findings[:5]

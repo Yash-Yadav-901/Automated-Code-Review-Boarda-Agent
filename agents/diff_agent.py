@@ -10,18 +10,14 @@ from semantic_kernel.contents import ChatHistory
 class DiffAgent:
     """
     Agent 1: Diff Agent (Separate Module)
-    Role: Analyzes the raw submitted code change, extracts touched files, hunks,
-    and metrics, and generates an executive summary of what changed.
-    Calls 2 real Python tools:
-      1. parse_unified_diff
-      2. compute_diff_metrics
+    Analyzes raw diffs, extracts touched files, hunks, and metrics,
+    and generates an executive change summary.
     """
     def __init__(self, agent_name: str = "DiffAgent"):
         self.name = agent_name
         self.kernel, self.settings = create_sk_kernel(service_id=f"{self.name}_service")
 
     async def run(self, state: ChangeState) -> ChangeState:
-        # Tool Call 1: Parse the diff into structured file chunks
         parse_res = parse_unified_diff(state.raw_diff)
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -35,7 +31,6 @@ class DiffAgent:
             state.summary = "Diff parsing aborted: invalid or empty diff."
             return state
 
-        # Update state with parsed file objects
         state.files = [
             TouchedFile(
                 path=f["path"],
@@ -51,7 +46,6 @@ class DiffAgent:
         state.total_additions = parse_res.get("total_additions", 0)
         state.total_deletions = parse_res.get("total_deletions", 0)
 
-        # Tool Call 2: Compute diff metrics & churn ratios
         metrics = compute_diff_metrics(parse_res.get("files", []))
         audit_logger.append_entry(
             event_type="TOOL_CALL",
@@ -60,7 +54,6 @@ class DiffAgent:
             data={"tool": "compute_diff_metrics", "metrics": metrics}
         )
 
-        # Grounded LLM reasoning via Semantic Kernel: Executive summary
         file_list_str = ", ".join([f.path for f in state.files]) or "None"
         prompt = (
             f"You are the Diff Analysis Agent for an Automated Code Review Board.\n"
@@ -79,7 +72,6 @@ class DiffAgent:
             response = await chat_service.get_chat_message_content(history, self.settings)
             state.summary = str(response.content).strip()
         except Exception as e:
-            # Fallback heuristic summary
             state.summary = (
                 f"Change touches {len(state.files)} file(s) with +{state.total_additions}/-{state.total_deletions} churn. "
                 f"Modified files: {file_list_str}."

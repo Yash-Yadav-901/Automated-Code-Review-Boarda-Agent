@@ -4,10 +4,8 @@ from typing import Any, Dict, List
 
 def parse_unified_diff(raw_diff: str) -> Dict[str, Any]:
     """
-    Real Tool 1 (Diff Agent):
     Parses a raw unified git diff into structured file entries, identifying
     touched paths, change modes, added/deleted line counts, and separated code blocks.
-    Handles malformed or empty diffs gracefully.
     """
     if not raw_diff or not raw_diff.strip():
         return {
@@ -29,7 +27,6 @@ def parse_unified_diff(raw_diff: str) -> Dict[str, Any]:
 
         lines = chunk.splitlines()
         header = lines[0]
-        # Match "a/path b/path"
         paths = header.split(" ")
         file_path = "unknown"
         if len(paths) >= 2:
@@ -82,9 +79,8 @@ def parse_unified_diff(raw_diff: str) -> Dict[str, Any]:
 
 def compute_diff_metrics(files: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Real Tool 2 (Diff Agent):
-    Computes engineering metrics across all modified files, such as churn ratio,
-    file distribution by extension, and test-to-code modification ratio.
+    Computes engineering metrics across modified files: churn, file types,
+    and test-to-code modification ratio.
     """
     if not files:
         return {
@@ -113,7 +109,6 @@ def compute_diff_metrics(files: List[Dict[str, Any]]) -> Dict[str, Any]:
         ext = f.get("path", "").split(".")[-1] if "." in f.get("path", "") else "unknown"
         extensions[ext] = extensions.get(ext, 0) + 1
 
-    # Footprint heuristic
     if net_churn > 300 or total_files > 10:
         risk_footprint = "HIGH"
     elif net_churn > 80 or total_files > 4:
