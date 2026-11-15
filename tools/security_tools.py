@@ -2,9 +2,8 @@ import ast
 import re
 from typing import Any, Dict, List
 
-
 SECRET_PATTERNS = [
-    (r"(?i)aws_secret_access_key\s*=\s*['\"][A-Za-z0-9/+=]{30,}['\"]", "AWS Secret Access Key", "SEC-001"),
+    (r"(?i)aws_secret_access_key\s*=\s*['\"][A-Za-z0-9/+=]{16,}['\"]", "AWS Secret Access Key", "SEC-001"),
     (r"(?i)AKIA[0-9A-Z]{16}", "AWS Access Key ID", "SEC-002"),
     (r"(?i)(api[_-]?key|secret[_-]?key|auth[_-]?token)\s*=\s*['\"][A-Za-z0-9_\-]{16,}['\"]", "Hardcoded API/Auth Token", "SEC-003"),
     (r"(?i)password\s*=\s*['\"][^'\"]{6,}['\"]", "Hardcoded Plaintext Password", "SEC-004"),
@@ -15,27 +14,25 @@ SECRET_PATTERNS = [
 def scan_secrets_and_credentials(diff_text: str) -> List[Dict[str, Any]]:
     """
     Real Tool 1 (Security Agent):
-    Scans additions in the diff for committed credentials, AWS secret keys,
+    Scans additions and diff context for committed credentials, AWS secret keys,
     API keys, authorization tokens, and private keys using regular expression patterns.
     """
     findings: List[Dict[str, Any]] = []
     lines = diff_text.splitlines()
 
     for idx, line in enumerate(lines, start=1):
-        # Focus on added code in diff
-        if line.startswith("+") and not line.startswith("+++"):
-            code_line = line[1:].strip()
-            for pattern, name, rule_id in SECRET_PATTERNS:
-                if re.search(pattern, code_line):
-                    findings.append({
-                        "file_path": "diff_stream",
-                        "line_number": idx,
-                        "severity": "CRITICAL",
-                        "category": "Hardcoded Credential",
-                        "rule_id": rule_id,
-                        "description": f"Exposed secret detected: {name} committed directly in code change.",
-                        "suggestion": "Remove secret immediately, rotate the credential, and use environment variables.",
-                    })
+        clean_line = line.lstrip("+- ").strip()
+        for pattern, name, rule_id in SECRET_PATTERNS:
+            if re.search(pattern, clean_line):
+                findings.append({
+                    "file_path": "diff_stream",
+                    "line_number": idx,
+                    "severity": "CRITICAL",
+                    "category": "Hardcoded Credential",
+                    "rule_id": rule_id,
+                    "description": f"Exposed secret detected: {name} found in code change.",
+                    "suggestion": "Remove secret immediately, rotate the credential, and load secrets from environment variables or a vault.",
+                })
     return findings
 
 
@@ -43,7 +40,7 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
     """
     Real Tool 2 (Security Agent):
     Analyzes Python AST and patterns for dangerous security anti-patterns:
-    - SQL injection via raw string formatting or concatenation
+    - SQL injection via raw string formatting (f-strings) or concatenation (+) in queries
     - Unsafe evaluation via eval() or exec()
     - Insecure subprocess execution with shell=True
     - Insecure deserialization via pickle.loads()
@@ -56,8 +53,42 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
 
         try:
             tree = ast.parse(code)
+            tainted_sql_vars = set()
+
             for node in ast.walk(tree):
-                # 1. Detect eval() or exec()
+                # Track variables assigned formatted SQL statements e.g. query = f"SELECT ... {var}"
+                if isinstance(node, ast.Assign):
+                    is_sql_formatted = False
+                    if isinstance(node.value, ast.JoinedStr):
+                        # Inspect string parts for SQL keywords
+                        for part in node.value.values:
+                            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                                if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b", part.value, re.IGNORECASE):
+                                    is_sql_formatted = True
+                                    break
+                    elif isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Add):
+                        # Concat string with SQL keyword
+                        for sub in (node.value.left, node.value.right):
+                            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                                if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b", sub.value, re.IGNORECASE):
+                                    is_sql_formatted = True
+                                    break
+
+                    if is_sql_formatted:
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                tainted_sql_vars.add(target.id)
+                        findings.append({
+                            "file_path": file_path,
+                            "line_number": node.lineno,
+                            "severity": "CRITICAL",
+                            "category": "SQL Injection",
+                            "rule_id": "SEC-013",
+                            "description": "SQL statement dynamically constructed using formatted f-string or concatenation.",
+                            "suggestion": "Use parameterized queries with placeholder substitution (e.g., 'WHERE id = ?', (user_id,)).",
+                        })
+
+                # Detect dangerous function calls
                 if isinstance(node, ast.Call):
                     func_name = ""
                     if isinstance(node.func, ast.Name):
@@ -65,6 +96,7 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                     elif isinstance(node.func, ast.Attribute):
                         func_name = node.func.attr
 
+                    # 1. eval() or exec()
                     if func_name in ("eval", "exec"):
                         findings.append({
                             "file_path": file_path,
@@ -104,31 +136,25 @@ def audit_code_vulnerabilities(code_snippets: Dict[str, str]) -> List[Dict[str, 
                                     "suggestion": "Use safe serialization formats like JSON, Protocol Buffers, or msgpack.",
                                 })
 
-                    # 4. Raw SQL queries formatted with f-strings or concatenation
+                    # 4. Direct execute calls with tainted SQL variables or f-strings
                     if func_name in ("execute", "executemany", "raw"):
                         if node.args:
                             first_arg = node.args[0]
-                            # Detect f-string query
-                            if isinstance(first_arg, ast.JoinedStr):
+                            is_tainted_arg = False
+                            if isinstance(first_arg, ast.Name) and first_arg.id in tainted_sql_vars:
+                                is_tainted_arg = True
+                            elif isinstance(first_arg, ast.JoinedStr):
+                                is_tainted_arg = True
+
+                            if is_tainted_arg:
                                 findings.append({
                                     "file_path": file_path,
                                     "line_number": node.lineno,
                                     "severity": "CRITICAL",
-                                    "category": "SQL Injection",
-                                    "rule_id": "SEC-013",
-                                    "description": "SQL query built via formatted string (f-string) in execute() statement.",
-                                    "suggestion": "Use parameterized queries with placeholders (? or %s) to eliminate SQL injection.",
-                                })
-                            # Detect concatenation (+)
-                            elif isinstance(first_arg, ast.BinOp) and isinstance(first_arg.op, ast.Add):
-                                findings.append({
-                                    "file_path": file_path,
-                                    "line_number": node.lineno,
-                                    "severity": "CRITICAL",
-                                    "category": "SQL Injection",
+                                    "category": "SQL Injection Execution",
                                     "rule_id": "SEC-014",
-                                    "description": "SQL query built via string concatenation (+) in execute() statement.",
-                                    "suggestion": "Use parameterized queries with query parameters passed as a tuple/dict.",
+                                    "description": f"Database execute() called with dynamic/unparameterized query.",
+                                    "suggestion": "Pass query parameters as a tuple/dictionary argument to execute().",
                                 })
 
         except SyntaxError:
