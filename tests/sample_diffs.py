@@ -46,7 +46,7 @@ index 1111111..2222222 100644
 @@ -10,6 +10,14 @@
  import sqlite3
  
- AWS_SECRET_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE1234567890abcdef"
++AWS_SECRET_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE1234567890abcdef"
 +
 +def query_user_profile(db_conn, user_id: str):
 +    \"\"\"Query user profile details from database.\"\"\"
